@@ -13,17 +13,12 @@ import torch
 from transformers import AutoTokenizer
 
 from lse_norberto import LSEJointModel, predict
-from config import ENCODER_NAME, CHECKPOINT_PATH, INTENT_NAMES, SLOT_TYPE_NAMES, ACTION_TAG_NAMES, SLOT_TAG_NAMES
+from config import ENCODER_NAME as _DEFAULT_ENCODER, CHECKPOINT_PATH as _DEFAULT_CHECKPOINT
+from config import ACTION_TAG_NAMES, SLOT_TAG_NAMES, ESQUEMA_SLOTS_POR_COMANDO
 
-ENCODER_NAME = os.getenv("NORBERTO_MODEL", "Itau-Unibanco/NorBERTo-large")
-CHECKPOINT_PATH = os.getenv("NORBERTO_CHECKPOINT", "./checkpoints/lse_norberto_v2.pt")
-
-# precisam ser EXATAMENTE os mesmos nomes/ordem usados no train_lse_norberto.py
-INTENT_NAMES = ["ligar_ar", "desligar_ar", "ajustar_temp", "saudacao", "despedida"]
-SLOT_TYPE_NAMES = ["sala", "temperatura"]
-
-ACTION_TAG_NAMES = ["O"] + [f"{p}-{intent}" for intent in INTENT_NAMES for p in ("B", "I")]
-SLOT_TAG_NAMES = ["O"] + [f"{p}-{slot}" for slot in SLOT_TYPE_NAMES for p in ("B", "I")]
+# permite sobrescrever via variavel de ambiente, mas usa o config.py como padrao
+ENCODER_NAME = os.getenv("NORBERTO_MODEL", _DEFAULT_ENCODER)
+CHECKPOINT_PATH = os.getenv("NORBERTO_CHECKPOINT", _DEFAULT_CHECKPOINT)
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -62,7 +57,8 @@ def main():
         if not texto:
             continue
 
-        comandos = predict(model, tokenizer, texto, ACTION_TAG_NAMES, SLOT_TAG_NAMES, device=DEVICE)
+        comandos = predict(model, tokenizer, texto, ACTION_TAG_NAMES, SLOT_TAG_NAMES, device=DEVICE,
+                            esquema_slots=ESQUEMA_SLOTS_POR_COMANDO)
 
         if not comandos:
             print("  Nenhum comando detectado\n")

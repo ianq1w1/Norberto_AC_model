@@ -44,6 +44,13 @@ SEPARADORES_MULTIACAO = [" e ", " ", ", ", " e tambem ", " depois ", " em seguid
 # ajustar_temp cobria sozinho antes (so verbo + valor, sem sala nenhuma)
 PREFIXOS_SALA_TEMP = ["no ar da sala", "no ar condicionado da sala", "na sala"]
 
+# mesma ideia, mas no PLURAL - pro caso de varias salas recebendo a mesma
+# temperatura (ex: "nas salas B15, A18, mude a temperatura para 22 graus")
+PREFIXOS_MULTI_SALA_TEMP = [
+    "nas salas", "no ar das salas", "no ar condicionado das salas",
+    "na sala", "no ar da sala", "nas salas:", "na sala:",
+]
+
 # graus + formato de escrita (varia justamente pra nao depender so de "X graus")
 GRAUS_VALORES = [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 28, 29, 30]
 FORMATOS_TEMPERATURA = ["{g} graus", "{g}°", "{g}°c", "{g} graus celsius"]
@@ -59,11 +66,14 @@ SALAS = SALAS_LETRA_NUMERO + SALAS_NUMERO_PURO
 # Controle de tamanho do dataset final - AJUSTE AQUI
 # ---------------------------------------------------------------------------
 
-N_SEM_SALA_POR_INTENT = 20     # quantas combinacoes verbo+objeto sem sala, por intent (ligar/desligar)
-N_COM_SALA_POR_INTENT = 60     # quantas combinacoes verbo+objeto+sala, por intent
-N_TEMPERATURA = 40             # quantas combinacoes verbo+valor de temperatura (sem mencionar sala)
-N_TEMPERATURA_COM_SALA = 60    # quantas combinacoes verbo+valor+sala (ex: "no ar da sala X, mude para Y")
-N_MULTIACAO = 300              # quantos exemplos combinados de 2 acoes
+N_SEM_SALA_POR_INTENT = 20      # quantas combinacoes verbo+objeto sem sala, por intent (ligar/desligar)
+N_COM_SALA_POR_INTENT = 60      # quantas combinacoes verbo+objeto+sala, por intent
+N_MULTI_SALA_POR_INTENT = 40    # quantos exemplos com LISTA de varias salas, por intent (ligar/desligar)
+N_TEMPERATURA = 40              # quantas combinacoes verbo+valor de temperatura (sem mencionar sala)
+N_TEMPERATURA_COM_SALA = 60     # quantas combinacoes verbo+valor+1 sala (ex: "no ar da sala X, mude para Y")
+N_TEMPERATURA_MULTI_SALA = 40   # quantas combinacoes verbo+valor+VARIAS salas (ex: "nas salas X, Y, mude para Z")
+N_MULTIACAO = 300               # quantos exemplos combinados de 2 acoes
+FRACAO_VARIACAO_CASE = 0.15     # chance de gerar uma copia MAIUSCULA/minuscula/Capitalizada de cada exemplo
 
 
 def span_por_valor(texto: str, valor: str, tipo: str):
@@ -90,6 +100,37 @@ def _gerar_ligar_desligar(intent: str, verbos: list, n_sem_sala: int, n_com_sala
         frase = f"{verbo} {objeto} da sala {sala}"
         slot = span_por_valor(frase, sala, "sala")
         exemplos.append((frase, [(0, len(frase), intent)], [slot]))
+
+    return exemplos
+
+
+def _gerar_ligar_desligar_multi_sala(intent: str, verbos: list, n_total: int):
+    """
+    Gera frases com VARIAS salas pra UMA SO acao de ligar/desligar (ex: "ligue
+    o ar das salas B15, A18, F20" ou "desligue o ar da sala: B04, F04 e A08"),
+    com cada codigo marcado como seu proprio span de slot "sala" (nao um span
+    so cobrindo a lista inteira). Varia entre "da sala"/"das salas" (singular
+    e plural, ja que na fala as pessoas nem sempre usam o plural certo) e
+    com/sem dois-pontos antes da lista.
+    """
+    exemplos = []
+    combos_verbo_objeto = list(itertools.product(verbos, OBJETOS_AR))
+    prefixos = ["das salas", "da sala", "das salas:", "da sala:"]
+
+    for _ in range(n_total):
+        verbo, objeto = random.choice(combos_verbo_objeto)
+        prefixo = random.choice(prefixos)
+        k = random.randint(2, 4)
+        codigos = random.sample(SALAS, k)
+
+        if random.random() < 0.5:
+            lista_str = ", ".join(codigos)
+        else:
+            lista_str = ", ".join(codigos[:-1]) + " e " + codigos[-1]
+
+        frase = f"{verbo} {objeto} {prefixo} {lista_str}"
+        slots = [span_por_valor(frase, codigo, "sala") for codigo in codigos]
+        exemplos.append((frase, [(0, len(frase), intent)], slots))
 
     return exemplos
 
@@ -140,6 +181,70 @@ def _gerar_ajustar_temp_com_sala(n_total: int):
     return exemplos
 
 
+def _gerar_ajustar_temp_multi_sala(n_total: int):
+    """
+    Cobre "nas salas B15, A18, F20, mude a temperatura para 22 graus" - a
+    mesma temperatura aplicada a VARIAS salas na mesma acao. Gera 1 span de
+    temperatura + N spans de sala (um por codigo), todos associados a uma
+    unica acao ajustar_temp. Antes essa combinacao (multi-sala + ajustar_temp)
+    reaproveitava por engano a funcao de ligar/desligar, gerando frases sem
+    valor de temperatura nenhum - essa funcao corrige isso, gerando a
+    estrutura certa (verbo + valor + lista de salas).
+    """
+    exemplos = []
+    valores_formatados = [
+        fmt.format(g=g) for g in GRAUS_VALORES for fmt in FORMATOS_TEMPERATURA
+    ]
+
+    for _ in range(n_total):
+        verbo = random.choice(VERBOS_TEMP)
+        valor = random.choice(valores_formatados)
+        prefixo = random.choice(PREFIXOS_MULTI_SALA_TEMP)
+
+        k = random.randint(2, 4)
+        codigos = random.sample(SALAS, k)
+        if random.random() < 0.5:
+            lista_str = ", ".join(codigos)
+        else:
+            lista_str = ", ".join(codigos[:-1]) + " e " + codigos[-1]
+
+        virgula = random.choice([", ", " "])
+        sala_primeiro = random.random() < 0.5
+
+        if sala_primeiro:
+            # "nas salas B15, A18, mude a temperatura para 22 graus"
+            frase = f"{prefixo} {lista_str}{virgula}{verbo} {valor}"
+        else:
+            # "mude a temperatura para 22 graus nas salas B15, A18"
+            frase = f"{verbo} {valor}{virgula}{prefixo} {lista_str}"
+
+        slot_temp = span_por_valor(frase, valor, "temperatura")
+        slots_sala = [span_por_valor(frase, codigo, "sala") for codigo in codigos]
+        exemplos.append((frase, [(0, len(frase), "ajustar_temp")], [slot_temp] + slots_sala))
+
+    return exemplos
+
+
+def _variar_case(exemplos: list, fracao: float):
+    """
+    Pra cada exemplo, com probabilidade `fracao`, adiciona uma copia extra em
+    MAIUSCULO, minusculo ou Com A Primeira Letra Maiuscula. Como essas
+    transformacoes preservam o TAMANHO da string (nao mudam quantos
+    caracteres tem cada palavra), os spans de acao/slot continuam validos
+    sem precisar recalcular nada - so trocamos o texto, mantendo os indices.
+    """
+    variados = list(exemplos)  # mantem todos os originais (minusculo, como gerados)
+
+    for texto, acoes, slots in exemplos:
+        if random.random() < fracao:
+            variados.append((texto.upper(), acoes, slots))
+        if random.random() < fracao:
+            texto_capitalizado = texto[:1].upper() + texto[1:]
+            variados.append((texto_capitalizado, acoes, slots))
+
+    return variados
+
+
 def _gerar_saudacao_despedida():
     exemplos = []
     for frase in SAUDACOES:
@@ -153,9 +258,13 @@ def gerar_exemplos_simples():
     exemplos = []
     exemplos += _gerar_ligar_desligar("ligar_ar", VERBOS_LIGAR, N_SEM_SALA_POR_INTENT, N_COM_SALA_POR_INTENT)
     exemplos += _gerar_ligar_desligar("desligar_ar", VERBOS_DESLIGAR, N_SEM_SALA_POR_INTENT, N_COM_SALA_POR_INTENT)
+    exemplos += _gerar_ligar_desligar_multi_sala("ligar_ar", VERBOS_LIGAR, N_MULTI_SALA_POR_INTENT)
+    exemplos += _gerar_ligar_desligar_multi_sala("desligar_ar", VERBOS_DESLIGAR, N_MULTI_SALA_POR_INTENT)
     exemplos += _gerar_ajustar_temp(N_TEMPERATURA)
     exemplos += _gerar_ajustar_temp_com_sala(N_TEMPERATURA_COM_SALA)
+    exemplos += _gerar_ajustar_temp_multi_sala(N_TEMPERATURA_MULTI_SALA)
     exemplos += _gerar_saudacao_despedida()
+    exemplos = _variar_case(exemplos, FRACAO_VARIACAO_CASE)
     return exemplos
 
 
@@ -203,9 +312,13 @@ if __name__ == "__main__":
     dataset = gerar_dataset()
     print(f"Total de exemplos gerados: {len(dataset)}")
     print(f"  Salas disponiveis: {len(SALAS)} ({len(SALAS_LETRA_NUMERO)} letra+numero, {len(SALAS_NUMERO_PURO)} numero puro)")
-    print("\nExemplos do padrao novo (sala + temperatura combinados):")
-    exemplos_sala_temp = [e for e in dataset if len(e[2]) == 2 and e[1][0][2] == "ajustar_temp"]
-    for texto, acoes, slots in random.sample(exemplos_sala_temp, min(5, len(exemplos_sala_temp))):
+
+    print("\nExemplos do padrao ajustar_temp + multi-sala (novo):")
+    exemplos_multi_sala_temp = [
+        e for e in dataset
+        if e[1] and e[1][0][2] == "ajustar_temp" and sum(1 for s in e[2] if s[2] == "sala") >= 2
+    ]
+    for texto, acoes, slots in random.sample(exemplos_multi_sala_temp, min(3, len(exemplos_multi_sala_temp))):
         print(f"  texto:  {texto!r}")
         print(f"  acoes:  {acoes}")
         print(f"  slots:  {slots}\n")
