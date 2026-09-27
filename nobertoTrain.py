@@ -19,7 +19,11 @@ from transformers import AutoTokenizer
 from lse_norberto import LSEJointModel, compute_joint_loss
 from dataset import gerar_dataset
 from config import ENCODER_NAME, CHECKPOINT_PATH, INTENT_NAMES, SLOT_TYPE_NAMES, ACTION_TAG_NAMES, SLOT_TAG_NAMES
- 
+
+from safetensors.torch import save_file
+import json
+import os
+
 # ---------------------------------------------------------------------------
 # 1. Configuracao (nomes de comando/slot vem do config.py compartilhado)
 # ---------------------------------------------------------------------------
@@ -199,7 +203,24 @@ def main():
  
         if val_loss <= melhor_val_loss:
             melhor_val_loss = val_loss
-            torch.save(model.state_dict(), CHECKPOINT_PATH)
+            os.makedirs("./hf_model", exist_ok=True)
+
+            save_file(
+                model.state_dict(),
+                "./hf_model/model.safetensors"
+            )
+
+            tokenizer.save_pretrained("./hf_model")
+
+            with open("./hf_model/config.json", "w", encoding="utf-8") as f:
+                json.dump({
+                    "encoder_name": ENCODER_NAME,
+                    "num_action_tags": len(ACTION_TAG_NAMES),
+                    "num_slot_tags": len(SLOT_TAG_NAMES),
+                    "action_tags": ACTION_TAG_NAMES,
+                    "slot_tags": SLOT_TAG_NAMES
+                }, f, ensure_ascii=False, indent=2)
+
             print(f"  -> novo melhor checkpoint salvo em {CHECKPOINT_PATH}")
  
     print(f"\nTreino concluido. Melhor val_loss: {melhor_val_loss:.4f}")

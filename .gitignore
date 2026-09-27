@@ -1,1 +1,3 @@
 checkpoints/*.pt
+publicaHF.py
+hf_model

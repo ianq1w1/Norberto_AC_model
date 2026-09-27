@@ -2,10 +2,10 @@
 test_norberto_cli.py
 
 Loop de terminal para testar o LSEJointModel (action-tagging) interativamente.
-So faz sentido rodar DEPOIS de ter um checkpoint treinado (train_lse_norberto.py).
+So faz sentido rodar DEPOIS de ter um checkpoint treinado (nobertoTrain.py).
 
 Rodar com:
-    python test_norberto_cli.py
+    python NorBERToTeste
 """
 
 import os
@@ -38,7 +38,7 @@ def carregar_modelo():
     else:
         print(
             f"AVISO: nenhum checkpoint encontrado em '{CHECKPOINT_PATH}'. "
-            "Rode train_lse_norberto.py primeiro - sem isso as heads estao "
+            "Rode nobertoTrain.py primeiro - sem isso as heads estao "
             "com pesos aleatorios e a saida nao vai fazer sentido nenhum."
         )
 
