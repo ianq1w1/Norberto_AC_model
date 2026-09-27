@@ -268,6 +268,8 @@ def predict(model, tokenizer, text: str, action_tag_names, slot_tag_names, devic
     action_probs_full = torch.softmax(outputs["action_tag_logits"][0], dim=-1)
     slot_probs_full = torch.softmax(outputs["slot_tag_logits"][0], dim=-1)
 
+
+
     action_ids = action_probs_full.argmax(dim=-1).tolist()
     slot_ids = slot_probs_full.argmax(dim=-1).tolist()
     action_confidences = action_probs_full.max(dim=-1).values.tolist()
@@ -298,6 +300,9 @@ def predict(model, tokenizer, text: str, action_tag_names, slot_tag_names, devic
     action_spans = filtrar_por_confianca(action_spans, action_confidences, limiar_confianca)
     slot_spans = filtrar_por_confianca(slot_spans, slot_confidences, limiar_confianca)
 
+   
+    #print(f"  -> {[action_spans]}")
+    #print(f"  -> {[slot_spans]}")
     # reconstroi o texto de cada span a partir dos proprios input_ids (lida bem
     # com subtokens/wordpieces, ao contrario de tentar juntar strings na mao)
     for span in action_spans + slot_spans:
