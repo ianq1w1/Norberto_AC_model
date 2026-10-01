@@ -5,16 +5,16 @@ Loop de terminal para testar o LSEJointModel (action-tagging) interativamente.
 So faz sentido rodar DEPOIS de ter um checkpoint treinado (nobertoTrain.py).
 
 Rodar com:
-    python NorBERToTeste
+    python NoBERToTest.py
 """
 
 import os
 import torch
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoConfig
 
-from lse_norberto import LSEJointModel, predict
+from lse_norberto import LSEJointModel, predict, criar_embeddings_placeholder
 from config import ENCODER_NAME as _DEFAULT_ENCODER, CHECKPOINT_PATH as _DEFAULT_CHECKPOINT
-from config import ACTION_TAG_NAMES, SLOT_TAG_NAMES, ESQUEMA_SLOTS_POR_COMANDO
+from config import ACTION_TAG_NAMES, SLOT_TAG_NAMES, ESQUEMA_SLOTS_POR_COMANDO, USAR_HEADS_SEMANTICAS
 
 # permite sobrescrever via variavel de ambiente, mas usa o config.py como padrao
 ENCODER_NAME = os.getenv("NORBERTO_MODEL", _DEFAULT_ENCODER)
@@ -26,10 +26,22 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 def carregar_modelo():
     print(f"Carregando tokenizer e encoder ({ENCODER_NAME})...")
     tokenizer = AutoTokenizer.from_pretrained(ENCODER_NAME)
+
+    action_emb_init = None
+    slot_emb_init = None
+    if USAR_HEADS_SEMANTICAS:
+        # so precisa do FORMATO certo aqui - os valores reais vem do
+        # checkpoint carregado logo abaixo, via load_state_dict
+        hidden_size = AutoConfig.from_pretrained(ENCODER_NAME).hidden_size
+        action_emb_init = criar_embeddings_placeholder(len(ACTION_TAG_NAMES), hidden_size)
+        slot_emb_init = criar_embeddings_placeholder(len(SLOT_TAG_NAMES), hidden_size)
+
     model = LSEJointModel(
         encoder_name=ENCODER_NAME,
         num_action_tags=len(ACTION_TAG_NAMES),
         num_slot_tags=len(SLOT_TAG_NAMES),
+        action_label_embeddings_init=action_emb_init,
+        slot_label_embeddings_init=slot_emb_init,
     ).to(DEVICE)
 
     if os.path.exists(CHECKPOINT_PATH):

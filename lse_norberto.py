@@ -30,21 +30,96 @@ import itertools
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from transformers import AutoModel, AutoTokenizer
 
 
+class SemanticTaggingHead(nn.Module):
+    """
+    Head de classificacao por similaridade semantica, em vez de nn.Linear com
+    pesos arbitrarios. Cada tag tem um vetor (label_embeddings), inicializado
+    a partir da DESCRICAO em linguagem natural do rotulo (codificada pelo
+    proprio encoder) - o principio de Label Semantic Expansion do LSE-NLU
+    (Wang et al., 2025), adaptado pra classificacao por similaridade em vez
+    de geracao de texto. Os embeddings continuam TREINAVEIS (nn.Parameter),
+    entao partem do significado semantico e sao refinados pelos dados.
+
+    Mecanismo: normaliza token e label pra vetores unitarios, calcula cosine
+    similarity, e escala por uma temperatura aprendida - o mesmo esquema de
+    "prototype networks" (Snell et al., 2017) usado em metric learning.
+    """
+
+    def __init__(self, hidden_size: int, label_embeddings_init: torch.Tensor):
+        super().__init__()
+        self.label_embeddings = nn.Parameter(label_embeddings_init.clone())
+        self.projecao = nn.Linear(hidden_size, hidden_size)
+        self.escala = nn.Parameter(torch.tensor(10.0))
+
+    def forward(self, sequence_output):  # (batch, seq_len, hidden)
+        tokens_proj = self.projecao(sequence_output)
+        tokens_norm = F.normalize(tokens_proj, dim=-1)
+        labels_norm = F.normalize(self.label_embeddings, dim=-1)
+        return self.escala * tokens_norm @ labels_norm.T  # (batch, seq_len, num_labels)
+
+
+@torch.no_grad()
+def calcular_embeddings_dos_rotulos(encoder, tokenizer, descricoes: list, device: str = "cpu"):
+    """
+    Codifica cada descricao de rotulo com o PROPRIO encoder (mean pooling),
+    uma vez so, ANTES do treino comecar - gera o ponto de partida semantico
+    dos label_embeddings da SemanticTaggingHead.
+    """
+    encoder.eval()
+    vetores = []
+    for descricao in descricoes:
+        encoded = tokenizer(descricao, return_tensors="pt", truncation=True).to(device)
+        outputs = encoder(**encoded)
+        mask = encoded["attention_mask"].unsqueeze(-1).float()
+        pooled = (outputs.last_hidden_state * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1e-9)
+        vetores.append(pooled[0])
+    return torch.stack(vetores)
+
+
+def criar_embeddings_placeholder(num_tags: int, hidden_size: int):
+    """
+    Usado na INFERENCIA (nao no treino): quando voce vai carregar um
+    checkpoint ja treinado com SemanticTaggingHead via load_state_dict, so
+    precisa de um tensor do FORMATO certo pra montar a arquitetura - os
+    valores reais vem do checkpoint carregado em seguida, esses aqui sao so
+    "placeholder" pra a classe ser instanciada com as camadas certas.
+    """
+    return torch.zeros(num_tags, hidden_size)
+
+
 class LSEJointModel(nn.Module):
-    """Encoder compartilhado (NorBERTo) + 2 heads de token classification (BIO)."""
+    """Encoder compartilhado (NorBERTo) + 2 heads de token classification (BIO).
+
+    Se `action_label_embeddings_init`/`slot_label_embeddings_init` forem
+    fornecidos, usa SemanticTaggingHead (classificacao por similaridade com
+    a descricao semantica do rotulo) em vez de nn.Linear puro. Sem eles,
+    comportamento identico ao original - checkpoints antigos continuam
+    carregando normalmente.
+    """
 
     def __init__(self, encoder_name: str, num_action_tags: int, num_slot_tags: int,
-                 dropout: float = 0.1):
+                 dropout: float = 0.1,
+                 action_label_embeddings_init: torch.Tensor = None,
+                 slot_label_embeddings_init: torch.Tensor = None):
         super().__init__()
         self.encoder = AutoModel.from_pretrained(encoder_name)
         hidden_size = self.encoder.config.hidden_size
 
         self.dropout = nn.Dropout(dropout)
-        self.action_tagging_head = nn.Linear(hidden_size, num_action_tags)
-        self.slot_tagging_head = nn.Linear(hidden_size, num_slot_tags)
+
+        if action_label_embeddings_init is not None:
+            self.action_tagging_head = SemanticTaggingHead(hidden_size, action_label_embeddings_init)
+        else:
+            self.action_tagging_head = nn.Linear(hidden_size, num_action_tags)
+
+        if slot_label_embeddings_init is not None:
+            self.slot_tagging_head = SemanticTaggingHead(hidden_size, slot_label_embeddings_init)
+        else:
+            self.slot_tagging_head = nn.Linear(hidden_size, num_slot_tags)
 
     def forward(self, input_ids, attention_mask, token_type_ids=None):
         encoder_kwargs = {"input_ids": input_ids, "attention_mask": attention_mask}
@@ -268,8 +343,6 @@ def predict(model, tokenizer, text: str, action_tag_names, slot_tag_names, devic
     action_probs_full = torch.softmax(outputs["action_tag_logits"][0], dim=-1)
     slot_probs_full = torch.softmax(outputs["slot_tag_logits"][0], dim=-1)
 
-
-
     action_ids = action_probs_full.argmax(dim=-1).tolist()
     slot_ids = slot_probs_full.argmax(dim=-1).tolist()
     action_confidences = action_probs_full.max(dim=-1).values.tolist()
@@ -300,9 +373,6 @@ def predict(model, tokenizer, text: str, action_tag_names, slot_tag_names, devic
     action_spans = filtrar_por_confianca(action_spans, action_confidences, limiar_confianca)
     slot_spans = filtrar_por_confianca(slot_spans, slot_confidences, limiar_confianca)
 
-   
-    #print(f"  -> {[action_spans]}")
-    #print(f"  -> {[slot_spans]}")
     # reconstroi o texto de cada span a partir dos proprios input_ids (lida bem
     # com subtokens/wordpieces, ao contrario de tentar juntar strings na mao)
     for span in action_spans + slot_spans:
