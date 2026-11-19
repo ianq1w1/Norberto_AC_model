@@ -7,7 +7,7 @@ daqui, entao ficam sempre sincronizados entre si.
 """
 
 ENCODER_NAME = "Itau-Unibanco/NorBERTo-large"
-CHECKPOINT_PATH = "./checkpoints/lse_norberto_v2.pt"
+CHECKPOINT_PATH = "./hf_model/model.safetensors"
 
 INTENT_NAMES = ["ligar_ar", "desligar_ar", "ajustar_temp", "saudacao", "despedida"]
 SLOT_TYPE_NAMES = ["sala", "temperatura"]

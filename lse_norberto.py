@@ -87,6 +87,7 @@ def compute_joint_loss(outputs, batch, pad_tag_id: int = -100):
     }
 
 
+
 # ---------------------------------------------------------------------------
 # Decodificacao: logits -> spans de acao/slot -> comandos estruturados
 # ---------------------------------------------------------------------------
@@ -294,8 +295,11 @@ def predict(model, tokenizer, text: str, action_tag_names, slot_tag_names, devic
     # da mesma acao - mesclar aqui arriscava PERDER um comando real (pior
     # que so mostrar uma linha duplicada por ruido). Slots mesclar continua
     # ok, o risco de colisao la e bem mais raro.
+    print(f"  -> {[action_ids]}")
+    print(f"  -> {[slot_ids]}")
+
     action_spans = decode_bio_spans(action_ids, action_id2tag)
-    slot_spans = mesclar_spans_proximos(decode_bio_spans(slot_ids, slot_id2tag))
+    slot_spans = decode_bio_spans(slot_ids, slot_id2tag)
 
     action_spans = filtrar_por_confianca(action_spans, action_confidences, limiar_confianca)
     slot_spans = filtrar_por_confianca(slot_spans, slot_confidences, limiar_confianca)

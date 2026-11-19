@@ -10,6 +10,7 @@ Rodar com:
 
 import os
 import torch
+from safetensors.torch import load_file
 from transformers import AutoTokenizer
 
 from lse_norberto import LSEJointModel, predict
@@ -33,14 +34,12 @@ def carregar_modelo():
     ).to(DEVICE)
 
     if os.path.exists(CHECKPOINT_PATH):
-        model.load_state_dict(torch.load(CHECKPOINT_PATH, map_location=DEVICE))
+        checkpoint = load_file(CHECKPOINT_PATH, device=DEVICE)
+        model.load_state_dict(checkpoint)
+
         print(f"Checkpoint carregado de {CHECKPOINT_PATH}")
     else:
-        print(
-            f"AVISO: nenhum checkpoint encontrado em '{CHECKPOINT_PATH}'. "
-            "Rode nobertoTrain.py primeiro - sem isso as heads estao "
-            "com pesos aleatorios e a saida nao vai fazer sentido nenhum."
-        )
+        print(f"Checkpoint não encontrado: {CHECKPOINT_PATH}")
 
     model.eval()
     return tokenizer, model
@@ -63,7 +62,12 @@ def main():
         if not comandos:
             print("  Nenhum comando detectado\n")
             continue
-
+        for nome, parametro in model.named_parameters():
+            print(
+                nome,
+                parametro.shape,
+                parametro.requires_grad
+            )
         for c in comandos:
             print(f"  -> {c['comando']}({c['slots']})")
         print()
