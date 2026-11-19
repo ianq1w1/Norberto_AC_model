@@ -267,7 +267,7 @@ class LSEJointModel(PreTrainedModel):
         slot_id2tag = dict(enumerate(slot_tag_names))
 
         action_spans = decode_bio_spans(action_ids, action_id2tag)
-        slot_spans = mesclar_spans_proximos(decode_bio_spans(slot_ids, slot_id2tag))
+        slot_spans = decode_bio_spans(slot_ids, slot_id2tag)
 
         action_spans = filtrar_por_confianca(action_spans, action_confidences, limiar_confianca)
         slot_spans = filtrar_por_confianca(slot_spans, slot_confidences, limiar_confianca)
